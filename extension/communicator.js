@@ -25,8 +25,9 @@ const removeQuotesFromHex = (dirty) => {
 
 const removeParityByteFromHexPoint = (point) => {
     if (point[0] !== "0" || !(point[1] === "2" || point[1] === "3")) {
-        throw new Error("Invalid parity identifier");
+        return point;
     }
+
     return point.slice(2);
 };
 
@@ -40,6 +41,7 @@ const formatReceivedPublicKey = (pubkeyBase64) => {
     }
     let xCoordinate = removeParityByteFromHexPoint(pubkeyHex);
     console.assert(xCoordinate.length === 2 * 32);
+    console.log("Pubkey: " + xCoordinate);
     return xCoordinate;
 };
 
@@ -152,7 +154,7 @@ const filterNostrGroups = (groups) =>
     groups.filter(
         (group) =>
             group.getKeyType() === KeyType.SIGNCHALLENGE &&
-            group.getProtocol() === ProtocolType.FROST &&
+            group.getProtocol() === ProtocolType.MUSIG2 &&
             group.getName().toLowerCase().includes("nostr")
     );
 
@@ -183,6 +185,9 @@ const formatReceivedSignature = (signatureBase64) => {
     if (signature.length != 64 * 2) {
         throw new Error("Invalid signature length");
     }
+
+    console.log("Signature: " + signature);
+
     return signature;
 };
 
@@ -216,19 +221,37 @@ const fetchEventSignature = async (client, taskId) => {
     );
 };
 
+const hexStringToUint8Array = (hexString) => {
+    if (hexString.length % 2 !== 0) {
+        throw "Invalid hexString";
+    }
+    var arrayBuffer = new Uint8Array(hexString.length / 2);
+
+    for (var i = 0; i < hexString.length; i += 2) {
+        var byteValue = parseInt(hexString.substr(i, 2), 16);
+        if (isNaN(byteValue)) {
+            throw "Invalid hexString";
+        }
+        arrayBuffer[i / 2] = byteValue;
+    }
+
+    return arrayBuffer;
+}
+
 export const signEvent = async (event, groupId) => {
     event.created_at = Math.floor(Date.now() / 1000);
 
     const pubkeyHex = formatReceivedPublicKey(groupId);
     event.pubkey = pubkeyHex;
     let eventId = getEventHash(event);
+    console.log("EventId: " + eventId);
     event.id = eventId;
 
     var client = new MeeSignPromiseClient(MEESIGN_SERVER_URL);
     var request = new SignRequest();
     request.setName(createTaskName(event));
     request.setGroupId(groupId);
-    request.setData(eventId);
+    request.setData(hexStringToUint8Array(eventId));
 
     let response = await client.sign(request, {});
     let taskId = response.getId();
